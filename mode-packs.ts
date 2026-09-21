@@ -123,15 +123,45 @@ export function loadPackSource(skillDir: string): PackSource {
 }
 
 /**
- * The unset-state line. `enforcement` shapes only this line and never denies a call —
- * the extension registers no `tool_call` handler (risk r2, D4).
+ * The unset-state line. `enforcement` shapes only this line. The deny decision lives in
+ * `gateDecision` below and is unconditional: no carve-out, no config key.
  */
 const ENFORCEMENT_LINES: Readonly<Record<Enforcement, string>> = {
 	remind:
 		'No mode is committed. Call set_mode before non-trivial work. Pass mode "none" to stand down.',
 	block:
-		'No mode is committed. Do not start non-trivial work until set_mode is called. Pass mode "none" to stand down. A routine, already-scoped edit is exempt.',
+		'No mode is committed. Do not start non-trivial work until set_mode is called. Pass mode "none" to stand down.',
 };
+
+/**
+ * The block reason. Names the fix and the stand-down path. Carries no routine-edit
+ * carve-out: the gate denies every tool but `set_mode`, so an exemption here would
+ * contradict it (FR3). `mode-packs.check.ts` pins the text.
+ */
+export const GATE_REASON =
+	'No mode is committed for this turn. Call set_mode before any other tool, then retry the blocked call. Pass mode "none" to stand down.';
+
+/**
+ * Pure. The whole gate policy: `(committed, toolName) → deny | allow`.
+ *
+ * `undefined` is an allow, which is the handler's "no opinion" result (`types.d.ts:902`).
+ * Never sets `terminate`: an all-blocked batch would end the run before `set_mode` could
+ * recover (`types.d.ts:822-826`).
+ *
+ * The transport is allowlisted too. In full-code mode every tool call arrives as
+ * `fabric_exec`, and `set_mode` is reachable only inside its program. A blocked
+ * transport deadlocks the session with no way out. The gate yields there, and the
+ * advisory layer does the teaching.
+ */
+export function gateDecision(
+	committed: boolean,
+	toolName: string,
+): { block: true; reason: string } | undefined {
+	if (committed || toolName === "set_mode" || toolName === "fabric_exec") {
+		return undefined;
+	}
+	return { block: true, reason: GATE_REASON };
+}
 
 /**
  * Authored, 6 lines, active mode only. Each live injector declares its own axis, so this

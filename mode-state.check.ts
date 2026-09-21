@@ -199,4 +199,39 @@ faulty.restore(ctxWith([]));
 assert.equal(notifications.length, 1, "exactly one config-error notification");
 assert.ok(notifications[0].includes("skillmaxxing.json"));
 
+// --- 5. createModeStore: per-turn commit flag (gate state) -------------------
+const restoredGate = createModeStore(fakePi, { config: { ...DEFAULT_CONFIG } });
+restoredGate.restore(ctxWith([entry({ mode: "theo_mode", bottleneck: "x" })]));
+assert.deepEqual(restoredGate.get(), { mode: "theo_mode", bottleneck: "x" });
+assert.equal(restoredGate.committed(), false, "session restore must not satisfy the gate");
+
+// A config default commits inside restore, so the clear must come last (FR2).
+const defaultGate = createModeStore(fakePi, {
+	config: { ...DEFAULT_CONFIG, defaultMode: "levels_mode" },
+});
+defaultGate.restore(ctxWith([]));
+assert.deepEqual(defaultGate.get(), {
+	mode: "levels_mode",
+	bottleneck: "(config default)",
+});
+assert.equal(defaultGate.committed(), false, "a config default must not satisfy the gate");
+
+const turnStore = createModeStore(fakePi, { config: { ...DEFAULT_CONFIG } });
+assert.equal(turnStore.committed(), false, "a fresh store starts uncommitted");
+assert.deepEqual(turnStore.commit(null, "routine edit"), {
+	previous: null,
+	wrote: true,
+});
+assert.equal(turnStore.committed(), true, "a stand-down commit satisfies the turn");
+
+turnStore.resetTurn();
+assert.equal(turnStore.committed(), false, "a new user turn clears the flag");
+assert.deepEqual(turnStore.get(), { mode: null, bottleneck: "routine edit" });
+assert.deepEqual(turnStore.commit(null, "routine edit"), {
+	previous: null,
+	wrote: false,
+});
+assert.equal(turnStore.committed(), true, "a deduped commit still satisfies the turn");
+assert.deepEqual(turnStore.get(), { mode: null, bottleneck: "routine edit" });
+
 console.log("mode-state.check.ts: all assertions passed");

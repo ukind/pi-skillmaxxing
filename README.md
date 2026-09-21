@@ -119,8 +119,8 @@ The extension never writes it.
 
 | Key | Domain | Default | Meaning |
 |---|---|---|---|
-| `enabled` | `true` \| `false` | `true` | Gates the mode machinery only. `false` leaves the `agent-skills-system` skill registered and `/skill:`-invocable, and removes the `set_mode` tool. |
-| `enforcement` | `"remind"` \| `"block"` | `"remind"` | Carried here, interpreted by the prompt injection. Neither value ever denies a tool call. |
+| `enabled` | `true` | `false` | `true` | Gates the advisory layer only: router text, packs, precedence, and the fault notify. `false` leaves the `agent-skills-system` skill registered and `/skill:`-invocable and keeps `set_mode` and the per-turn gate registered. |
+| `enforcement` | `"remind"` | `"block"` | `"remind"` | Carried here, interpreted by the prompt injection. It shapes the unset-state prompt line only. The gate denies tool calls on its own; no value toggles it. |
 | `defaultMode` | one of the six mode ids, or `null` | `null` | Applied only when the live session branch holds no mode entry. |
 
 Every field is clamped against its own domain on read: a wrong type, an unknown mode id, or an unknown
@@ -153,7 +153,7 @@ distinct from a persisted `{ mode: null }` (an explicit `set_mode "none"` stand-
 
 | Store state | Meaning | Injected | Measured |
 | --- | --- | --- | --- |
-| `null` | unset | router block + one enforcement line | 1,411 B `remind`, 1,470 B `block` |
+| `null` | unset | router block + one enforcement line | 1,411 B `remind`, 1,428 B `block` |
 | `{ mode: null }` | stood down | nothing | 0 B |
 | `{ mode, bottleneck }` | committed | router + active line + verbatim pack + transitions + precedence | 2,496–2,911 B |
 
@@ -164,12 +164,15 @@ committed bottleneck is unbounded user text, and a deeper install path lengthens
 so `mode-packs.check.ts` asserts both unset variants under 1.5 KB and every one of the six modes
 under 3 KB, and prints the measured numbers on every run.
 
-`enforcement` is prompt language, never a denied tool call. It shapes exactly one line, and only
-in the unset state — with a mode committed there is nothing left to enforce. `remind` states the
-reminder; `block` is the imperative variant and states the routine-edit exemption. The extension
-registers no `tool_call` handler, so a mutating call issued with no mode committed still
-executes. The vendored `SKILL.md` forbids the coercive reading directly: "Do not force mode
-narration into a routine, already-scoped edit unless routing changes the work."
+`enforcement` is prompt language only. It shapes exactly one line, and only in the unset state.
+`remind` states the reminder; `block` is the imperative variant. Denial lives in the `tool_call`
+gate and is unconditional: every tool but `set_mode` and the full-code transport `fabric_exec` is denied until the current
+user turn holds a commit (`mode: "none"` counts). The transport must pass: in full-code mode
+`set_mode` is reachable only inside a `fabric_exec` program, and a blocked transport
+deadlocks the session. The vendored `SKILL.md` keeps its line about routine,
+already-scoped edits, but the gate does not exempt them. Subagent sessions load this extension
+too, so a child gates its own turns; agents with an `extensions:` allowlist that omits
+skillmaxxing bypass the gate entirely.
 
 Nothing is copied into TypeScript. `loadPackSource` slices the router table out of `SKILL.md`
 §`## Route The Task` and the six packs plus the per-mode transition lines out of
@@ -344,3 +347,8 @@ Before the migration the mode contract was unconditional prompt text. After it, 
 invocation only: the vendored skill stays in the skills index and stays
 `/skill:agent-skills-system`-invocable, but `set_mode` is not registered and no router, pack, or
 precedence text is injected. This is recorded here rather than left for a later bug report.
+
+With the mandatory mode gate (2026-09), `enabled: false` no longer removes `set_mode`: the tool
+and the per-turn gate stay registered, and only the router, pack, precedence, and fault-notify
+layers drop. A disabled extension still blocks the first tool call of every turn until `set_mode`
+runs. In full-code mode the transport passes, so a disabled extension blocks the direct tools only. The paragraph above records the earlier contract and is kept as history.

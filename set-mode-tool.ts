@@ -21,7 +21,6 @@ const MODE_PARAM = [...MODE_IDS, "none"] as const;
 export interface SetModeDetails {
 	mode: ModeId | null;
 	previous: ModeId | null;
-	enforcement: "remind" | "block";
 }
 
 /**
@@ -90,7 +89,6 @@ export function createSetModeTool(
 			const details: SetModeDetails = {
 				mode: next,
 				previous,
-				enforcement: store.config.enforcement,
 			};
 			return {
 				content: [{ type: "text" as const, text: lines.join("\n") }],

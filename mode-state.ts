@@ -46,7 +46,7 @@ export interface ModeState {
 }
 
 export interface SkillmaxxingConfig {
-	/** Gates the mode machinery (tool + phase 3 injector). The vendored skill ships regardless. */
+	/** Gates the advisory layer only: router text, packs, precedence, and the fault notify. The vendored skill ships regardless. */
 	enabled: boolean;
 	/** Carried here, interpreted by phase 3. */
 	enforcement: Enforcement;
@@ -165,6 +165,10 @@ export interface ModeStore {
 		mode: ModeId | null,
 		bottleneck: string,
 	): { previous: ModeId | null; wrote: boolean };
+	/** The current turn holds a mode commit. Read by the gate, written by `commit`. */
+	committed(): boolean;
+	/** A new user turn: open it. Clears the commit flag and nothing else. */
+	resetTurn(): void;
 	/** session_start: restore from the branch, else apply config.defaultMode. */
 	restore(ctx: Pick<ExtensionContext, "sessionManager" | "ui">): void;
 }
@@ -175,11 +179,16 @@ export function createModeStore(
 ): ModeStore {
 	let state: ModeState | null = null;
 	let notifiedConfigError = false;
+	/** Per-turn gate flag. Any `commit` sets it; `resetTurn` clears it. */
+	let committedThisTurn = false;
 
 	function commit(
 		mode: ModeId | null,
 		bottleneck: string,
 	): { previous: ModeId | null; wrote: boolean } {
+		// The act of choosing satisfies the turn, not the value: a deduped commit and
+		// `mode: null` (a stand-down) both count. Set before the early return.
+		committedThisTurn = true;
 		const previous = state?.mode ?? null;
 		if (state !== null && state.mode === mode && state.bottleneck === bottleneck) {
 			return { previous, wrote: false };
@@ -193,6 +202,10 @@ export function createModeStore(
 		config: loaded.config,
 		get: () => state,
 		commit,
+		committed: () => committedThisTurn,
+		resetTurn: () => {
+			committedThisTurn = false;
+		},
 		restore(ctx) {
 			if (loaded.error !== undefined && !notifiedConfigError) {
 				notifiedConfigError = true;
@@ -203,14 +216,14 @@ export function createModeStore(
 			// it beats config.defaultMode. Reassigning unconditionally also clears a
 			// previous session's mode on a "new" / "resume" / "fork" session_start.
 			state = readModeFromEntries(ctx.sessionManager.getBranch());
-			if (state !== null) {
-				return;
-			}
-			if (loaded.config.defaultMode !== null) {
+			if (state === null && loaded.config.defaultMode !== null) {
 				// Recorded exactly like a model commit — the
 				// `extensions/simple-english/index.ts:482` precedent.
 				commit(loaded.config.defaultMode, "(config default)");
 			}
+			// Restore never satisfies the gate (FR2). Clearing last covers the
+			// config-default commit above: a side effect, not a turn choice.
+			committedThisTurn = false;
 		},
 	};
 }

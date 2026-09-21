@@ -18,8 +18,10 @@ import {
 	TRANSITIONS_HEADING,
 	buildInjection,
 	extractSection,
+	gateDecision,
 	loadPackSource,
 	packFor,
+	GATE_REASON,
 	type PackSource,
 } from "./mode-packs.ts";
 import { MODE_IDS, type ModeId } from "./mode-state.ts";
@@ -130,8 +132,8 @@ assert.ok(
 	"block is the imperative variant",
 );
 assert.ok(
-	blockUnset.includes("exempt"),
-	"block must state the routine-edit exemption",
+	!blockUnset.includes("exempt"),
+	"block must drop the routine-edit carve-out: the gate denies for real (FR3)",
 );
 assert.notEqual(blockUnset, unset, "enforcement must shape the unset line");
 // Both variants, not just the default: `block` is the longer line, so it is the real ceiling.
@@ -306,6 +308,52 @@ const widest = MODE_IDS.map((id) =>
 		buildInjection(source, { mode: id, bottleneck: "x" }, "remind") as string,
 	),
 ).reduce((a, b) => Math.max(a, b), 0);
+// --- new gate section: insert before the byte-size console.log at the file end ---
+// --- gate predicate ---------------------------------------------------------
+assert.ok(
+	GATE_REASON.includes("set_mode"),
+	"the block reason must name the fix",
+);
+assert.ok(
+	GATE_REASON.includes('"none"'),
+	'the block reason must state that mode "none" is allowed',
+);
+assert.ok(
+	GATE_REASON.includes("retry"),
+	"the block reason must state the retry recovery for parallel batches",
+);
+assert.ok(
+	!GATE_REASON.includes("exempt"),
+	"the block reason must carry no routine-edit carve-out (FR3)",
+);
+for (const tool of ["bash", "read", "edit", "write", "todo"]) {
+	assert.deepEqual(
+		gateDecision(false, tool),
+		{ block: true, reason: GATE_REASON },
+		`an uncommitted turn must block ${tool}`,
+	);
+}
+assert.equal(
+	gateDecision(false, "set_mode"),
+	undefined,
+	"set_mode must never be blocked (deadlock-free)",
+);
+assert.equal(
+	gateDecision(false, "fabric_exec"),
+	undefined,
+	"the transport must never be blocked: set_mode is reachable only inside its program",
+);
+assert.equal(
+	gateDecision(true, "bash"),
+	undefined,
+	"a committed turn passes every tool",
+);
+assert.equal(
+	gateDecision(true, "set_mode"),
+	undefined,
+	"a committed turn passes set_mode too",
+);
+
 console.log(
 	`mode-packs.check.ts OK — router ${Buffer.byteLength(source.routerTable)} B, unset ${Buffer.byteLength(unset)}/${Buffer.byteLength(blockUnset)} B, widest pack ${widest} B`,
 );
